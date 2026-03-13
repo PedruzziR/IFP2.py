@@ -121,10 +121,10 @@ tabelas_normativas = {
 }
 
 def obter_classificacao(percentil):
-    if percentil <= 10: return "Inferior"
-    elif percentil <= 25: return "Média Inferior"
-    elif percentil <= 75: return "Média"
-    elif percentil <= 90: return "Média Superior"
+    if percentil <= 22.5: return "Inferior"
+    elif percentil <= 42.5: return "Médio Inferior"
+    elif percentil <= 62.5: return "Médio"
+    elif percentil <= 82.5: return "Médio Superior"
     else: return "Superior"
 
 def cruzar_dados_normativos(fator, pontuacao_bruta, sexo):
