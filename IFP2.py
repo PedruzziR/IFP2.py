@@ -199,8 +199,9 @@ elif st.session_state.avaliacao_concluida:
 
 # ================= QUESTIONÁRIO IFP-II =================
 else:
-    st.write("Inventário Fatorial de Personalidade - IFP-II")
+    st.write("Inventário Fatorial de Personalidade")
     st.write("Este questionário constitui-se de 100 afirmações sobre coisas que você pode gostar ou não, sentimentos que você pode experimentar ou não e jeitos de ser que você pode ter ou não.")
+    st.write("Isso não é um teste ou uma prova. Não há respostas certas ou erradas. A resposta simplesmente descreve como você se sente, o que pensa ou o que gosta. Suas escolhas, portanto, devem ser feitas em função de seus gostos, preferências e sentimentos, pessoais e atuais; e não em função do passado ou das impressões que os outros têm de você.")
     st.write("Você deve ler atentamente cada afirmação e dizer quanto do que ela afirma caracteriza você. Procure responder sequencialmente a todas as questões.")
     st.divider()
 
