@@ -5,6 +5,7 @@ from email.mime.multipart import MIMEMultipart
 import json
 import gspread
 from google.oauth2.service_account import Credentials
+import datetime
 
 # ================= CONFIGURAÇÕES DE E-MAIL =================
 SEU_EMAIL = st.secrets["EMAIL_USUARIO"]
@@ -21,25 +22,27 @@ def conectar_planilha():
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=escopos)
     client = gspread.authorize(creds)
-    return client.open("IFP-II").sheet1  # LEMBRE-SE DE CRIAR A PLANILHA "IFP-II" NO DRIVE
+    # CONECTA À PLANILHA CENTRAL DE TOKENS
+    return client.open("Controle_Tokens").sheet1 
 
 try:
     planilha = conectar_planilha()
 except Exception as e:
-    st.error(f"Erro de conexão com o Banco de Dados. O erro exato é: {e}")
+    st.error(f"Erro de conexão com o Banco de Dados: {e}")
     st.stop()
 # =============================================================
 
-def enviar_email_resultados(nome, cpf, sexo, resultados_processados):
+def enviar_email_resultados(nome, token, sexo, resultados_processados):
     assunto = f"Resultados IFP-II - Paciente: {nome}"
     
-    corpo = f"Avaliação IFP-II concluída.\n\n"
-    corpo += f"Paciente: {nome}\n"
-    corpo += f"CPF: {cpf}\n"
-    corpo += f"Sexo: {sexo}\n\n"
+    corpo = f"Avaliação IFP-II (Inventário Fatorial de Personalidade) concluída.\n\n"
+    corpo += f"=== DADOS DO(A) PACIENTE ===\n"
+    corpo += f"Nome: {nome}\n"
+    corpo += f"Sexo Biológico: {sexo}\n"
+    corpo += f"Token de Validação: {token}\n\n"
+    
     corpo += "================ RESULTADOS ================\n\n"
 
-    # Mantendo o formato exato solicitado
     for fator, dados in resultados_processados.items():
         corpo += f"{fator}:\n"
         corpo += f"  - Escore Bruto: {dados['bruto']}\n"
@@ -50,7 +53,7 @@ def enviar_email_resultados(nome, cpf, sexo, resultados_processados):
     msg['From'] = SEU_EMAIL
     msg['To'] = "psicologabrunaligoski@gmail.com"
     msg['Subject'] = assunto
-    msg.attach(MIMEText(corpo, 'plain'))
+    msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
 
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -59,10 +62,10 @@ def enviar_email_resultados(nome, cpf, sexo, resultados_processados):
         server.send_message(msg)
         server.quit()
         return True
-    except Exception as e:
+    except:
         return False
 
-# 1. Estrutura de Correção e Fatores do IFP-II
+# ESTRUTURA E TABELAS (MANTIDAS)
 mapa_fatores = {
     'Assistência': [9, 44, 47, 58, 73, 77, 89, 98],
     'Intracepção': [18, 22, 25, 60, 67, 87, 90],
@@ -76,11 +79,9 @@ mapa_fatores = {
     'Ordem': [30, 51, 55, 78, 94, 95],
     'Persistência': [8, 10, 14, 16, 20, 27, 36, 42],
     'Mudança': [3, 13, 21, 41, 43, 59, 79],
-    'Autonomia': [1, 4, 5, 40, 63, 69, 74, 91, 92],
-    'AFET': [], 'ORGAN': [], 'CON-OP': [] # Calculados separadamente
+    'Autonomia': [1, 4, 5, 40, 63, 69, 74, 91, 92]
 }
 
-# 2. Tabelas Normativas (Processadas a partir da base oficial enviada)
 tabelas_normativas = {
     "Masculino": {
         "Assistência": [(34, 5), (36, 10), (38, 15), (39, 20), (40, 25), (41, 30), (42, 35), (43, 40), (43, 45), (44, 50), (45, 55), (46, 60), (47, 65), (47, 70), (48, 75), (50, 80), (51, 85), (52, 90), (54, 95), (56, 100)],
@@ -120,158 +121,134 @@ tabelas_normativas = {
     }
 }
 
-def obter_classificacao(percentil):
-    if percentil <= 22.5: return "Inferior"
-    elif percentil <= 42.5: return "Médio Inferior"
-    elif percentil <= 62.5: return "Médio"
-    elif percentil <= 82.5: return "Médio Superior"
-    else: return "Superior"
+def obter_faixa_etaria(idade):
+    # IFP-II não utiliza faixa etária para normatização, apenas Sexo Biológico
+    return "Padrao"
 
 def cruzar_dados_normativos(fator, pontuacao_bruta, sexo):
     tabela = tabelas_normativas[sexo][fator]
-    percentil_encontrado = tabela[0][1] 
+    percentil_encontrado = tabela[0][1]
     for score_tabela, perc in tabela:
         if pontuacao_bruta >= score_tabela:
             percentil_encontrado = perc
-        else: break 
-    classificacao = obter_classificacao(percentil_encontrado)
-    return percentil_encontrado, classificacao
-
-# 3. Perguntas IFP-II
-perguntas = [
-    "1. Gosto de fazer coisas que outras pessoas consideram fora do comum.", "2. Gostaria de realizar um grande feito ou grande obra na minha vida.", "3. Gosto de experimentar novidades e mudanças em meu dia-a-dia.", "4. Não gosto de situações em que se exige que eu me comporte de determinada maneira.", "5. Gosto de dizer o que eu penso a respeito das coisas.", "6. Gosto de saber o que grandes personalidades disseram sobre os problemas pelos quais eu me interesso.", "7. Gosto de ser capaz de fazer as coisas melhor do que as outras pessoas.", "8. Gosto de concluir qualquer trabalho ou tarefa que tenha começado.", "9. Gosto de ajudar meus amigos quando eles estão com problemas.", "10. Não costumo abandonar um quebra-cabeça ou problema antes que consiga resolvê-lo.", "11. Gosto de dizer aos outros como fazer seus trabalhos.", "12. Gostaria de ser considerado(a) uma autoridade em algum trabalho, profissão ou campo de especialização.", "13. Gosto de experimentar e provar coisas novas.", "14. Quando tenho alguma tarefa para fazer, gosto de começar logo e permanecer trabalhando até completá-la.", "15. Aceito com prazer a liderança das pessoas que admiro.", "16. Gosto de trabalhar horas a fio sem ser interrompido(a).", "17. Gosto que meus amigos me dêem muita atenção quando estou sofrendo ou doente.", "18. Costumo analisar minhas intenções e sentimentos.", "19. Gosto de fazer com carinho pequenos favores a meus amigos.", "20. Gosto de ficar acordado(a) até tarde para terminar um trabalho.", "21. Gosto de andar pelo país e viver em lugares diferentes.", "22. Gosto de analisar os sentimentos e intenções dos outros.", "23. Gosto de fazer gozação com pessoas que fazem coisas que eu considero estúpidas.", "24. Tenho vontade de me vingar quando alguém me insulta.", "25. Gosto de pensar sobre o caráter dos meus amigos e tentar descobrir o que os faz serem como são.", "26. Sou leal aos meus amigos.", "27. Gosto de levar um trabalho ou tarefa até o fim antes de começar outro.", "28. Gosto de dizer aos meus superiores que eles fizeram um bom trabalho, quando acredito nisso.", "29. Gosto que meus amigos sejam solidários comigo e me animem quando estou deprimido(a).", "30. Antes de começar um trabalho, gosto de organizá-lo e planejá-lo.", "31. Gosto que meus amigos demonstrem muito afeto por mim.", "32. Gosto de realizar tarefas que, na opinião dos outros, exigem habilidade e esforço.", "33. Gosto de ser bem-sucedido nas coisas que faço.", "34. Gosto de fazer amizades.", "35. Gosto de ser considerado(a) um(a) líder pelos outros.", "36. Gosto de realizar com afinco (sem descanso) qualquer trabalho que faço.", "37. Gosto de participar de grupos cujos membros se tratem com afeto e amizade.", "38. Sinto-me satisfeito(a) quando realizo bem um trabalho difícil.", "39. Tenho vontade de mandar os outros calarem a boca quando discordo deles.", "40. Gosto de fazer coisas do meu jeito sem me importar com o que os outros possam pensar.", "41. Gosto de viajar e conhecer o país.", "42. Gosto de me fixar em um trabalho ou problema mesmo quando a solução pareça extremamente difícil.", "43. Gosto de conhecer novas pessoas.", "44. Gosto de dividir coisas com os outros.", "45. Sinto-me satisfeito(a) quando consigo convencer e influenciar ou outros.", "46. Gosto de demonstrar muita afeição por meus amigos.", "47. Gosto de prestar favores aos outros.", "48. Gosto de seguir instruções e fazer o que é esperado de mim.", "49. Gosto de elogiar alguém que admiro.", "50. Quando planejo alguma coisa, procuro sugestões de pessoas que respeito.", "51. Gosto de manter minhas coisas limpas e ordenadas em minha escrivaninha ou em meu local de trabalho.", "52. Gosto de manter fortes laços de amizade.", "53. Gosto que meus amigos me ajudem quando estou com problema.", "54. Gosto que meus amigos mostrem boa vontade em me prestar pequenos favores.", "55. Gosto de manter minhas cartas, contas e outros papéis bem arrumados e arquivados de acordo com algum sistema.", "56. Gosto que meus amigos sejam solidários e compreensivos quando tenho problemas.", "57. Prefiro fazer coisas com meus amigos a fazer sozinho.", "58. Gosto de tratar outras pessoas com bondade e compaixão.", "59. Gosto de comer em restaurantes novos e exóticos (diferentes).", "60. Procuro entender como meus amigos se sentem a respeito de problemas que eles enfrentam.", "61. Gosto de ser o centro das atenções em um grupo.", "62. Gosto de ser um dos líderes nas organizações e grupos aos quais pertenço.", "63. Gosto de ser independente dos outros para decidir o que quero fazer.", "64. Gosto de me manter em contato com meus amigos.", "65. Quando participo de uma comissão (reunião), gosto de ser indicado ou eleito presidente.", "66. Gosto de fazer tantos amigos quanto possível.", "67. Gosto de observar como uma outra pessoa se sente numa determinada situação.", "68. Quando estou em um grupo, aceito com prazer a liderança de outra pessoa para decidir o que o grupo fará.", "69. Não gosto de me sentir pressionado(a) por responsabilidades e deveres.", "70. Às vezes, fico tão irritado(a) que sinto vontade de jogar e quebrar coisas.", "71. Gosto de fazer perguntas que ninguém será capaz de responder.", "72. Às vezes, gosto de fazer coisas simplesmente para ver o efeito que terão sobre os outros.", "73. Sou solidário com meus amigos quando machucados ou doentes.", "74. Não tenho medo de criticar pessoas que ocupam posições de autoridade.", "75. Gosto de fiscalizar e dirigir os atos dos outros sempre que posso.", "76. Culpo os outros quando as coisas dão errado comigo.", "77. Gosto de ajudar pessoas que têm menos sorte do que eu.", "78. Gosto de planejar e organizar, em todos os detalhes, qualquer trabalho que eu faço.", "79. Gosto de fazer coisas novas e diferentes.", "80. Gostaria de realizar com sucesso alguma coisa de grande importância.", "81. Quando estou com um grupo de pessoas. gosto de decidir sobre o que vamos fazer.", "82. Interesso-me em conhecer a vida de grandes personalidades.", "83. Procuro me adaptar ao modo de ser das pessoas que admiro.", "84. Gosto de resolver quebra-cabeças e problemas com os quais outras pessoas têm dificuldades.", "85. Gosto de falar sobre os meus sucessos.", "86. Gosto de dar o melhor de mim em tudo que faço.", "87. Gosto de estudar e analisar o comportamento dos outros.", "88. Gosto de contar aos outros aventuras e coisas estranhas que aconteceram comigo.", "89. Perdão as pessoas que às vezes possam me magoar.", "90. Gosto de prever (entender) como meus amigos irão agir em diferentes situações.", "91. Gosto de me sentir livre para fazer o que quero.", "92. Gosto de me sentir livre para ir e vir quando quiser.", "93. Gosto de usar palavras cujo significado as outras pessoas desconhecem.", "94. Gosto de planejar antes de iniciar algo difícil.", "95. Qualquer trabalho escrito que faço, gosto que seja preciso, limpo e bem-organizado.", "96. Gosto que as pessoas notem e comentem a minha aparência quando estou em público.", "97. Gosto que meus amigos me tratem com delicadeza.", "98. Gosto de ser generoso(a) com os outros.", "99. Gosto de contar histórias e piadas engraçadas em festas.", "100. Gosto de dizer coisas que os outros consideram engraçadas e inteligentes."
-]
+        else: break
+    return percentil_encontrado, obter_classificacao(percentil_encontrado)
 
 opcoes_respostas = {
-    "1 - Nada característico": 1,
-    "2 - Muito pouco característico": 2,
-    "3 - Pouco característico": 3,
-    "4 - Indiferente": 4,
-    "5 - Característico": 5,
-    "6 - Muito característico": 6,
-    "7 - Totalmente característico": 7
+    "1 - Nada característico": 1, "2 - Muito pouco característico": 2, "3 - Pouco característico": 3,
+    "4 - Indiferente": 4, "5 - Característico": 5, "6 - Muito característico": 6, "7 - Totalmente característico": 7
 }
 
-# 4. Interface Visual
-st.set_page_config(page_title="Avaliação Neuropsicológica IFP-II", layout="centered")
+# CONFIGURAÇÕES DE INTERFACE
+st.set_page_config(page_title="Avaliação IFP-II", layout="centered")
 
-if "logado" not in st.session_state:
-    st.session_state.logado = False
-if "cpf_paciente" not in st.session_state:
-    st.session_state.cpf_paciente = ""
+st.markdown("""
+    <style>
+    div[data-testid="stFormSubmitButton"] > button {
+        background-color: #0047AB !important;
+        color: white !important;
+        border: none !important;
+        padding: 0.6rem 2.5rem !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        font-size: 16px !important;
+    }
+    div[data-testid="stFormSubmitButton"] > button:hover {
+        background-color: #003380 !important;
+        color: white !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 if "avaliacao_concluida" not in st.session_state:
     st.session_state.avaliacao_concluida = False
 
-st.title("Clínica de Psicologia e Psicanálise Bruna Ligoski")
+# Título Centralizado
+st.markdown("<h1 style='text-align: center;'>Clínica de Psicologia e Psicanálise Bruna Ligoski</h1>", unsafe_allow_html=True)
 
-# ================= TELA DE LOGIN =================
-if not st.session_state.logado:
-    st.write("Bem-vindo(a). Por favor, insira suas credenciais de acesso para iniciar a avaliação.")
-    
-    with st.form("form_login"):
-        cpf_input = st.text_input("Login de Acesso (Apenas números)")
-        senha_input = st.text_input("Senha de Acesso", type="password")
-        botao_entrar = st.form_submit_button("Acessar Avaliação")
-        
-        if botao_entrar:
-            if not cpf_input:
-                st.error("Por favor, preencha o seu CPF.")
-            elif senha_input != st.secrets["SENHA_MESTRA"]:
-                st.error("Senha incorreta. Verifique com o profissional responsável.")
-            else:
-                try:
-                    cpfs_registrados = planilha.col_values(1)
-                except:
-                    cpfs_registrados = []
-                    
-                if cpf_input in cpfs_registrados:
-                    st.error("Acesso bloqueado. Este CPF já consta em nossa base de dados.")
-                else:
-                    st.session_state.logado = True
-                    st.session_state.cpf_paciente = cpf_input
-                    st.session_state.avaliacao_concluida = False
-                    st.rerun()
+if st.session_state.avaliacao_concluida:
+    st.success("Avaliação concluída e enviada com sucesso! Muito obrigado(a) pela sua colaboração.")
+    st.stop()
 
-# ================= TELA FINAL (APÓS ENVIO) =================
-elif st.session_state.avaliacao_concluida:
-    st.success("Avaliação concluída e enviada com sucesso! Muito obrigado pela sua participação.")
-    st.info("Você já pode fechar esta aba com segurança.")
+# ================= VALIDAÇÃO SILENCIOSA DO TOKEN =================
+parametros = st.query_params
+token_url = parametros.get("token", None)
+
+if not token_url:
+    st.warning("⚠️ Link de acesso inválido. Solicite um novo link à profissional.")
+    st.stop()
+
+try:
+    registros = planilha.get_all_records()
+    dados_token = None
+    linha_alvo = 2 
+    for i, reg in enumerate(registros):
+        if str(reg.get("Token")) == token_url:
+            dados_token = reg
+            linha_alvo += i
+            break
+            
+    if not dados_token or dados_token.get("Status") != "Aberto":
+        st.error("⚠️ Este link é inválido ou já foi utilizado.")
+        st.stop()
+except Exception:
+    st.error("Erro técnico na validação do link.")
+    st.stop()
 
 # ================= QUESTIONÁRIO IFP-II =================
-else:
-    st.write("Inventário Fatorial de Personalidade")
-    st.write("Este questionário constitui-se de 100 afirmações sobre coisas que você pode gostar ou não, sentimentos que você pode experimentar ou não e jeitos de ser que você pode ter ou não.")
-    st.write("Isso não é um teste ou uma prova. Não há respostas certas ou erradas. A resposta simplesmente descreve como você se sente, o que pensa ou o que gosta. Suas escolhas, portanto, devem ser feitas em função de seus gostos, preferências e sentimentos, pessoais e atuais; e não em função do passado ou das impressões que os outros têm de você.")
-    st.write("Você deve ler atentamente cada afirmação e dizer quanto do que ela afirma caracteriza você. Procure responder sequencialmente a todas as questões.")
+linha_fina = "<hr style='margin-top: 8px; margin-bottom: 8px;'/>"
+st.markdown(linha_fina, unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Inventário Fatorial de Personalidade (IFP-II)</h3>", unsafe_allow_html=True)
+st.markdown(linha_fina, unsafe_allow_html=True)
+
+st.write("Este questionário descreve sentimentos e jeitos de ser. Não há respostas certas ou erradas; responda de acordo com como você se sente **atualmente**.")
+st.markdown(linha_fina, unsafe_allow_html=True)
+
+perguntas = [
+    "1. Gosto de fazer coisas que outras pessoas consideram fora do comum.", "2. Gostaria de realizar um grande feito ou grande obra na minha vida.", "3. Gosto de experimentar novidades e mudanças em meu dia-a-dia.", "4. Não gosto de situações em que se exige que eu me comporte de determinada maneira.", "5. Gosto de dizer o que eu penso a respeito das coisas.", "6. Gosto de saber o que grandes personalidades disseram sobre os problemas pelos quais eu me interesso.", "7. Gosto de ser capaz de fazer as coisas melhor do que as outras pessoas.", "8. Gosto de concluir qualquer trabalho ou tarefa que tenha começado.", "9. Gosto de ajudar meus amigos quando eles estão com problemas.", "10. Não costumo abandonar um quebra-cabeça ou problema antes que consiga resolvê-lo.", "11. Gosto de dizer aos outros como fazer seus trabalhos.", "12. Gostaria de ser considerado(a) uma autoridade em algum trabalho, profissão ou campo de especialização.", "13. Gosto de experimentar e provar coisas novas.", "14. Quando tenho alguma tarefa para fazer, gosto de começar logo e permanecer trabalhando até completá-la.", "15. Aceito com prazer a liderança das pessoas que admiro.", "16. Gosto de trabalhar horas a fio sem ser interrompido(a).", "17. Gosto que meus amigos me dêem muita atenção quando estou sofrendo ou doente.", "18. Costumo analisar minhas intenções e sentimentos.", "19. Gosto de fazer com carinho pequenos favores a meus amigos.", "20. Gosto de ficar acordado(a) até tarde para terminar um trabalho.", "21. Gosto de andar pelo país e viver em lugares diferentes.", "22. Gosto de analisar os sentimentos e intenções dos outros.", "23. Gosto de fazer gozação com pessoas que fazem coisas que eu considero estúpidas.", "24. Tenho vontade de me vingar quando alguém me insulta.", "25. Gosto de pensar sobre o caráter dos meus amigos e tentar descobrir o que os faz serem como são.", "26. Sou leal aos meus amigos.", "27. Gosto de levar um trabalho ou tarefa até o fim antes de começar outro.", "28. Gosto de dizer aos meus superiores que eles fizeram um bom trabalho, quando acredito nisso.", "29. Gosto que meus amigos sejam solidários comigo e me animem quando estou deprimido(a).", "30. Antes de começar um trabalho, gosto de organizá-lo e planejá-lo.", "31. Gosto que meus amigos demonstrem muito afeto por mim.", "32. Gosto de realizar tarefas que, na opinião dos outros, exigem habilidade e esforço.", "33. Gosto de ser bem-sucedido nas coisas que faço.", "34. Gosto de fazer amizades.", "35. Gosto de ser considerado(a) um(a) líder pelos outros.", "36. Gosto de realizar com afinco (sem descanso) qualquer trabalho que faço.", "37. Gosto de participar de grupos cujos membros se tratem com afeto e amizade.", "38. Sinto-me satisfeito(a) quando realizo bem um trabalho difícil.", "39. Tenho vontade de mandar os outros calarem a boca quando discordo deles.", "40. Gosto de fazer coisas do meu jeito sem me importar com o que os outros possam pensar.", "41. Gosto de viajar e conhecer o país.", "42. Gosto de me fixar em um trabalho ou problema mesmo quando a solução pareça extremamente difícil.", "43. Gosto de conhecer novas pessoas.", "44. Gosto de dividir coisas com os outros.", "45. Sinto-me satisfeito(a) quando consigo convencer e influenciar ou outros.", "46. Gosto de demonstrar muita afeição por meus amigos.", "47. Gosto de prestar favores aos outros.", "48. Gosto de seguir instruções e fazer o que é esperado de mim.", "49. Gosto de elogiar alguém que admiro.", "50. Quando planejo alguma coisa, procuro sugestões de pessoas que respeito.", "51. Gosto de manter minhas coisas limpas e ordenadas em minha escrivaninha ou em meu local de trabalho.", "52. Gosto de manter fortes laços de amizade.", "53. Gosto que meus amigos me ajudem quando estou com problema.", "54. Gosto que meus amigos mostrem boa vontade em me prestar pequenos favores.", "55. Gosto de manter minhas cartas, contas e outros papéis bem arrumados e arquivados de acordo com algum sistema.", "56. Gosto que meus amigos sejam solidários e compreensivos quando tenho problemas.", "57. Prefiro fazer coisas com meus amigos a fazer sozinho.", "58. Gosto de tratar outras pessoas com bondade e compaixão.", "59. Gosto de comer em restaurantes novos e exóticos (diferentes).", "60. Procuro entender como meus amigos se sentem a respeito de problemas que eles enfrentam.", "61. Gosto de ser o centro das atenções em um grupo.", "62. Gosto de ser um dos líderes nas organizações e grupos aos quais pertenço.", "63. Gosto de ser independente dos outros para decidir o que quero fazer.", "64. Gosto de me manter em contato com meus amigos.", "65. Quando participo de uma comissão (reunião), gosto de ser indicado ou eleito presidente.", "66. Gosto de fazer tantos amigos quanto possível.", "67. Gosto de observar como uma outra pessoa se sente numa determinada situação.", "68. Quando estou em um grupo, aceito com prazer a liderança de outra pessoa para decidir o que o grupo fará.", "69. Não gosto de me sentir pressionado(a) por responsabilidades e deveres.", "70. Às vezes, fico tão irritado(a) que sinto vontade de jogar e quebrar coisas.", "71. Gosto de fazer perguntas que ninguém será capaz de responder.", "72. Às vezes, gosto de fazer coisas simplesmente para ver o efeito que terão sobre os outros.", "73. Sou solidário com meus amigos quando machucados ou doentes.", "74. Não tenho medo de criticar pessoas que ocupam posições de autoridade.", "75. Gosto de fiscalizar e dirigir os atos dos outros sempre que posso.", "76. Culpo os outros quando as coisas dão errado comigo.", "77. Gosto de ajudar pessoas que têm menos sorte do que eu.", "78. Gosto de planejar e organizar, em todos os detalhes, qualquer trabalho que eu faço.", "79. Gosto de fazer coisas novas e diferentes.", "80. Gostaria de realizar com sucesso alguma coisa de grande importância.", "81. Quando estou com um grupo de pessoas. gosto de decidir sobre o que vamos fazer.", "82. Interesso-me em conhecer a vida de grandes personalidades.", "83. Procuro me adaptar ao modo de ser das pessoas que admiro.", "84. Gosto de resolver quebra-cabeças e problemas com os quais outras pessoas têm dificuldades.", "85. Gosto de falar sobre os meus sucessos.", "86. Gosto de dar o melhor de mim em tudo que faço.", "87. Gosto de estudar e analisar o comportamento dos outros.", "88. Gosto de contar aos outros aventuras e coisas estranhas que aconteceram comigo.", "89. Perdão as pessoas que às vezes possam me magoar.", "90. Gosto de prever (entender) como meus amigos irão agir em diferentes situações.", "91. Gosto de me sentir livre para fazer o que quero.", "92. Gosto de me sentir livre para ir e vir quando quiser.", "93. Gosto de usar palavras cujo significado as outras pessoas desconhecem.", "94. Gosto de planejar antes de iniciar algo difícil.", "95. Qualquer trabalho escrito que faço, gosto que seja preciso, limpo e bem-organizado.", "96. Gosto que as pessoas notem e comentem a minha aparência quando estou em público.", "97. Gosto que meus amigos me tratem com delicadeza.", "98. Gosto de ser generoso(a) con os outros.", "99. Gosto de contar histórias e piadas engraçadas em festas.", "100. Gosto de dizer coisas que os outros consideram engraçadas e inteligentes."
+]
+
+with st.form("form_ifp"):
+    st.subheader("Identificação do(a) Paciente")
+    nome_paciente = st.text_input("Nome Completo *")
+    sexo_paciente = st.selectbox("Sexo Biológico *", ["Selecione", "Masculino", "Feminino"])
     st.divider()
 
-    with st.form("formulario_avaliacao"):
-        nome_paciente = st.text_input("Nome completo *")
-        cpf_paciente = st.text_input("CPF *", value=st.session_state.cpf_paciente, disabled=True)
-        
-        opcoes_sexo = ["Selecione...", "Masculino", "Feminino"]
-        sexo_paciente = st.selectbox("Sexo Biológico *", opcoes_sexo)
+    respostas_usuario = {}
+    for i, texto in enumerate(perguntas):
+        num_q = i + 1
+        st.write(f"**{texto}**")
+        respostas_usuario[num_q] = st.radio(f"q_{num_q}", list(opcoes_respostas.keys()), index=None, label_visibility="collapsed")
+        st.divider()
 
-        respostas_coletadas = {}
-
-        for i, texto_pergunta in enumerate(perguntas):
-            numero_q = i + 1
-            st.write(f"**{texto_pergunta}**")
-            resposta = st.radio(f"Oculto {numero_q}", list(opcoes_respostas.keys()), index=None,
-                                label_visibility="collapsed", key=f"q_{numero_q}")
-
-            if resposta is not None:
-                respostas_coletadas[numero_q] = opcoes_respostas[resposta]
-            else:
-                respostas_coletadas[numero_q] = None
-
-            st.write("---")
-
-        botao_enviar = st.form_submit_button("Finalizar Avaliação")
-
-    # 5. Processamento e Envio
-    if botao_enviar:
-        questoes_em_branco = [q for q, r in respostas_coletadas.items() if r is None]
-
-        if not nome_paciente or sexo_paciente == "Selecione...":
-            st.error("Por favor, preencha seu nome completo e selecione seu sexo antes de finalizar.")
-        elif questoes_em_branco:
-            st.error(f"Por favor, responda todas as perguntas. Falta responder {len(questoes_em_branco)} questão(ões).")
+    if st.form_submit_button("Enviar Avaliação"):
+        if not nome_paciente or sexo_paciente == "Selecione" or any(r is None for r in respostas_usuario.values()):
+            st.error("Por favor, preencha todos os campos e responda todas as questões.")
         else:
-            escores = {chave: 0 for chave in mapa_fatores.keys()}
+            escores = {f: 0 for f in list(mapa_fatores.keys()) + ['AFET', 'ORGAN', 'CON-OP']}
+            
+            # Cálculo dos 13 Fatores
+            for n, r in respostas_usuario.items():
+                val = opcoes_respostas[r]
+                for f, qs in mapa_fatores.items():
+                    if n in qs: escores[f] += val
 
-            # Somatório Bruto dos 13 Fatores Principais
-            for num_q, valor_resposta in respostas_coletadas.items():
-                for fator, lista_questoes in mapa_fatores.items():
-                    if fator not in ['AFET', 'ORGAN', 'CON-OP']:
-                        if num_q in lista_questoes:
-                            escores[fator] += valor_resposta
-                            break
-
-            # Cálculo das Escalas Especiais (Mapeadas pela sua base de dados do Excel)
+            # Cálculo Escalas Especiais
             escores['AFET'] = escores['Deferência'] + escores['Persistência'] + escores['Autonomia']
             escores['ORGAN'] = escores['Assistência'] + escores['Persistência'] + escores['Autonomia']
             escores['CON-OP'] = escores['Deferência'] + escores['Mudança'] + escores['Autonomia']
 
-            # Cruzamento Estatístico
-            resultados_completos = {}
-            for fator, pontuacao_bruta in escores.items():
-                percentil, classif = cruzar_dados_normativos(fator, pontuacao_bruta, sexo_paciente)
-                resultados_completos[fator] = {
-                    "bruto": pontuacao_bruta,
-                    "percentil": percentil,
-                    "classificacao": classif
-                }
+            resultados_processados = {f: cruzar_dados_normativos(f, v, sexo_paciente) for f, v in escores.items()}
+            res_dict = {f: {"bruto": escores[f], "percentil": resultados_processados[f][0], "classificacao": resultados_processados[f][1]} for f in escores}
 
-            with st.spinner('Analisando dados, gravando bloqueio e enviando avaliação...'):
-                sucesso_email = enviar_email_resultados(nome_paciente, st.session_state.cpf_paciente, sexo_paciente, resultados_completos)
-                
-                if sucesso_email:
+            with st.spinner('Enviando avaliação...'):
+                if enviar_email_resultados(nome_paciente, token_url, sexo_paciente, res_dict):
                     try:
-                        planilha.append_row([st.session_state.cpf_paciente])
+                        planilha.update_cell(linha_alvo, 5, "Respondido")
+                        st.session_state.avaliacao_concluida = True
+                        st.rerun()
                     except:
-                        pass
-                    st.session_state.avaliacao_concluida = True
-                    st.rerun()
+                        st.session_state.avaliacao_concluida = True
+                        st.rerun()
                 else:
-                    st.error("Houve um problema ao enviar a avaliação. Por favor, avise o profissional responsável.")
+                    st.error("Houve um erro no envio. Tente novamente.")
