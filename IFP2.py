@@ -7,10 +7,42 @@ import gspread
 from google.oauth2.service_account import Credentials
 import datetime
 
+# ================= BLOCO 1: DEFINIÇÃO DA MARCA D'ÁGUA =================
+def inject_watermark(nome_paciente, id_sessao):
+    watermark_style = f"""
+    <style>
+    .watermark {{
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        z-index: 9999;
+        pointer-events: none;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-around;
+        align-content: space-around;
+        opacity: 0.12;
+        user-select: none;
+    }}
+    .watermark-text {{
+        transform: rotate(-45deg);
+        font-size: 22px;
+        font-weight: bold;
+        color: grey;
+        white-space: nowrap;
+        text-align: center;
+        margin: 40px;
+    }}
+    </style>
+    <div class="watermark">
+        {"<div class='watermark-text'>INSTRUMENTO SIGILOSO<br>{paciente}<br>{sessao}</div>" * 20}
+    </div>
+    """.format(paciente=nome_paciente if nome_paciente else "PACIENTE NÃO IDENTIFICADO", sessao=id_sessao)
+    
+    st.markdown(watermark_style, unsafe_allow_html=True)
+
 # ================= CONFIGURAÇÕES DE E-MAIL =================
 SEU_EMAIL = st.secrets["EMAIL_USUARIO"]
 SENHA_DO_EMAIL = st.secrets["SENHA_USUARIO"]
-# ===========================================================
 
 # ================= CONEXÃO COM GOOGLE SHEETS =================
 @st.cache_resource
@@ -22,7 +54,6 @@ def conectar_planilha():
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=escopos)
     client = gspread.authorize(creds)
-    # CONECTA À PLANILHA CENTRAL DE TOKENS
     return client.open("Controle_Tokens").sheet1 
 
 try:
@@ -30,24 +61,15 @@ try:
 except Exception as e:
     st.error(f"Erro de conexão com o Banco de Dados: {e}")
     st.stop()
-# =============================================================
 
 def enviar_email_resultados(nome, token, sexo, resultados_processados):
     assunto = f"Resultados IFP-II - Paciente: {nome}"
-    
     corpo = f"Avaliação IFP-II (Inventário Fatorial de Personalidade) concluída.\n\n"
-    corpo += f"=== DADOS DO(A) PACIENTE ===\n"
-    corpo += f"Nome: {nome}\n"
-    corpo += f"Sexo Biológico: {sexo}\n"
-    corpo += f"Token de Validação: {token}\n\n"
-    
+    corpo += f"=== DADOS DO(A) PACIENTE ===\nNome: {nome}\nSexo Biológico: {sexo}\nToken de Validação: {token}\n\n"
     corpo += "================ RESULTADOS ================\n\n"
 
     for fator, dados in resultados_processados.items():
-        corpo += f"{fator}:\n"
-        corpo += f"  - Escore Bruto: {dados['bruto']}\n"
-        corpo += f"  - Percentil: {dados['percentil']}\n"
-        corpo += f"  - Classificação: {dados['classificacao']}\n\n"
+        corpo += f"{fator}:\n  - Escore Bruto: {dados['bruto']}\n  - Percentil: {dados['percentil']}\n  - Classificação: {dados['classificacao']}\n\n"
 
     msg = MIMEMultipart()
     msg['From'] = SEU_EMAIL
@@ -65,7 +87,7 @@ def enviar_email_resultados(nome, token, sexo, resultados_processados):
     except:
         return False
 
-# ESTRUTURA E TABELAS (MANTIDAS)
+# ESTRUTURA E TABELAS
 mapa_fatores = {
     'Assistência': [9, 44, 47, 58, 73, 77, 89, 98],
     'Intracepção': [18, 22, 25, 60, 67, 87, 90],
@@ -121,9 +143,10 @@ tabelas_normativas = {
     }
 }
 
-def obter_faixa_etaria(idade):
-    # IFP-II não utiliza faixa etária para normatização, apenas Sexo Biológico
-    return "Padrao"
+def obter_classificacao(percentil):
+    if percentil <= 25: return "Baixo"
+    if percentil <= 75: return "Médio"
+    return "Alto"
 
 def cruzar_dados_normativos(fator, pontuacao_bruta, sexo):
     tabela = tabelas_normativas[sexo][fator]
@@ -212,6 +235,11 @@ with st.form("form_ifp"):
     st.subheader("Identificação do(a) Paciente")
     nome_paciente = st.text_input("Nome Completo *")
     sexo_paciente = st.selectbox("Sexo Biológico *", ["Selecione", "Masculino", "Feminino"])
+    
+    # ================= BLOCO 2: CHAMADA DA MARCA D'ÁGUA =================
+    inject_watermark(nome_paciente, token_url)
+    # ====================================================================
+
     st.divider()
 
     respostas_usuario = {}
@@ -226,14 +254,11 @@ with st.form("form_ifp"):
             st.error("Por favor, preencha todos os campos e responda todas as questões.")
         else:
             escores = {f: 0 for f in list(mapa_fatores.keys()) + ['AFET', 'ORGAN', 'CON-OP']}
-            
-            # Cálculo dos 13 Fatores
             for n, r in respostas_usuario.items():
                 val = opcoes_respostas[r]
                 for f, qs in mapa_fatores.items():
                     if n in qs: escores[f] += val
 
-            # Cálculo Escalas Especiais
             escores['AFET'] = escores['Deferência'] + escores['Persistência'] + escores['Autonomia']
             escores['ORGAN'] = escores['Assistência'] + escores['Persistência'] + escores['Autonomia']
             escores['CON-OP'] = escores['Deferência'] + escores['Mudança'] + escores['Autonomia']
