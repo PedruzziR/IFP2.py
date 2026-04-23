@@ -9,6 +9,9 @@ import datetime
 
 # ================= BLOCO 1: DEFINIÇÃO DA MARCA D'ÁGUA =================
 def inject_watermark(nome_paciente, id_sessao):
+    # Usamos f-string e dobramos as chaves do CSS {{ }} para o Python ignorá-las
+    paciente_display = nome_paciente if nome_paciente else "PACIENTE NÃO IDENTIFICADO"
+    
     watermark_style = f"""
     <style>
     .watermark {{
@@ -34,9 +37,9 @@ def inject_watermark(nome_paciente, id_sessao):
     }}
     </style>
     <div class="watermark">
-        {"<div class='watermark-text'>INSTRUMENTO SIGILOSO<br>{paciente}<br>{sessao}</div>" * 20}
+        {f"<div class='watermark-text'>INSTRUMENTO SIGILOSO<br>{paciente_display}<br>{id_sessao}</div>" * 20}
     </div>
-    """.format(paciente=nome_paciente if nome_paciente else "PACIENTE NÃO IDENTIFICADO", sessao=id_sessao)
+    """
     
     st.markdown(watermark_style, unsafe_allow_html=True)
 
