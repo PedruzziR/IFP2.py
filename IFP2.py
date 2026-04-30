@@ -226,7 +226,7 @@ inject_watermark(nome_paciente, token_url)
 st.divider()
 st.write("Este questionário constitui-se de 100 afirmações sobre coisas que você pode gostar ou não, sobre sentimentos que você pode experimentar ou não e jeitos de ser que você pode ter ou não.")
 st.write("Este não é um teste ou uma prova. Não há respostas certas ou erradas. A resposta simplesmente descreve como você se sente, o que pensa ou o que gosta. Suas escolhas, portanto, devem ser feitas em função de seus gostos, preferências e sentimentos, pessoais e atuais; e não em função do passado ou das impressões que os outros têm de você.")
-st.write("Procure responder seqüencialmente a todas as questões.")
+st.write("Procure responder sequencialmente a todas as questões.")
 st.markdown(linha_fina, unsafe_allow_html=True)
 
 perguntas = [
