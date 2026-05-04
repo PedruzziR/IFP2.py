@@ -269,3 +269,9 @@ with st.form("form_ifp"):
                         st.rerun()
                 else:
                     st.error("Houve um erro no envio. Tente novamente.")
+
+
+# --- Keepalive: botão clicado pelo robô de ping para manter o app ativo ---
+with st.sidebar:
+    if st.button("Manter ativo", key="__keepalive__"):
+        pass
